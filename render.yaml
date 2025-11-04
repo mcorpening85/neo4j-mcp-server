@@ -6,6 +6,7 @@ services:
     region: oregon
     plan: free
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: NEO4J_TRANSPORT
         value: http
