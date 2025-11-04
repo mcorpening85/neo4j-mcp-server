@@ -17,5 +17,6 @@ EXPOSE 8080
 # HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 #     CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the server - configuration comes from environment variables set by Render
-CMD ["mcp-neo4j-cypher"]
+# Run the server with HTTP transport configuration
+# Neo4j credentials come from environment variables set by Render
+CMD mcp-neo4j-cypher --transport http --host 0.0.0.0 --port 8080
