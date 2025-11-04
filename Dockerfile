@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install curl for health checks
+# Install curl for health checks (optional, for manual testing)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
@@ -10,12 +10,16 @@ RUN apt-get update && \
 # Install the MCP server - specific version for stability
 RUN pip install --no-cache-dir mcp-neo4j-cypher
 
+# Copy the wrapper script
+COPY start.py /app/start.py
+RUN chmod +x /app/start.py
+
 # Expose port
 EXPOSE 8080
 
-# Health check (disabled for now as endpoint might vary)
-# HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-#     CMD curl -f http://localhost:8080/health || exit 1
+# Health check - now that we have a proper endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the server with verbose output for debugging
-CMD sh -c 'echo "Starting with NEO4J_TRANSPORT=$NEO4J_TRANSPORT NEO4J_MCP_SERVER_HOST=$NEO4J_MCP_SERVER_HOST NEO4J_MCP_SERVER_PORT=$NEO4J_MCP_SERVER_PORT" && mcp-neo4j-cypher'
+# Run the wrapper script which handles both health checks and MCP server
+CMD ["python3", "/app/start.py"]
