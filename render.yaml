@@ -14,9 +14,11 @@ services:
       - key: NEO4J_MCP_SERVER_PORT
         value: 8080
       - key: NEO4J_MCP_SERVER_PATH
-        value: /api/mcp/
+        value: /
       - key: NEO4J_MCP_SERVER_ALLOW_ORIGINS
-        value: https://claude.ai,https://claude.com
+        value: "*"
+      - key: NEO4J_MCP_SERVER_ALLOWED_HOSTS
+        value: "*"
       - key: NEO4J_DATABASE
         value: neo4j
       - key: NEO4J_READ_ONLY
