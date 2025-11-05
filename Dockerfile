@@ -7,8 +7,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install the MCP server - specific version for stability
-RUN pip install --no-cache-dir mcp-neo4j-cypher
+# Install the MCP server and required dependencies
+RUN pip install --no-cache-dir mcp-neo4j-cypher requests
 
 # Copy the wrapper script
 COPY start.py /app/start.py
