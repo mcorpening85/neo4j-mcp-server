@@ -24,7 +24,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     """
     Reverse proxy that:
     - Handles health checks at /health and / (GET/HEAD)
-    - Forwards all other requests to the MCP server
+    - Forwards /api/mcp/* requests to MCP server at /*
     """
     
     def _send_health_response(self):
@@ -37,8 +37,15 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def _proxy_to_mcp(self):
         """Forward request to MCP server."""
         try:
+            # Strip /api/mcp prefix if present, forward to root of MCP server
+            path = self.path
+            if path.startswith('/api/mcp'):
+                path = path[8:]  # Remove '/api/mcp'
+                if not path or path[0] != '/':
+                    path = '/' + path
+            
             # Build target URL
-            target_url = f"{MCP_BASE_URL}{self.path}"
+            target_url = f"{MCP_BASE_URL}{path}"
             
             # Get request headers and fix the Host header for internal routing
             headers = {}
@@ -55,7 +62,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length) if content_length > 0 else None
             
-            logger.info(f"Proxying {self.command} {self.path} to MCP server")
+            logger.info(f"Proxying {self.command} {self.path} -> {path} to MCP server")
             
             # Forward the request
             if self.command == 'GET':
@@ -111,6 +118,7 @@ def run_proxy_server(port=PROXY_PORT):
     """Run the reverse proxy server."""
     server = HTTPServer(('0.0.0.0', port), ProxyHandler)
     logger.info(f"Proxy server running on port {port}, forwarding to MCP on {MCP_PORT}")
+    logger.info(f"Path rewriting: /api/mcp/* -> /* on internal MCP server")
     server.serve_forever()
 
 
@@ -125,6 +133,9 @@ def run_mcp_server():
     env['NEO4J_MCP_SERVER_HOST'] = '127.0.0.1'  # Only bind to localhost
     # Override ALLOWED_HOSTS to accept localhost
     env['NEO4J_MCP_SERVER_ALLOWED_HOSTS'] = '127.0.0.1,localhost,*'
+    # Remove the path requirement - MCP server will run at root
+    if 'NEO4J_MCP_SERVER_PATH' in env:
+        del env['NEO4J_MCP_SERVER_PATH']
     
     # Log configuration
     logger.info("=" * 60)
@@ -132,7 +143,6 @@ def run_mcp_server():
     logger.info(f"  NEO4J_TRANSPORT: {env.get('NEO4J_TRANSPORT', 'not set')}")
     logger.info(f"  NEO4J_MCP_SERVER_HOST: {env.get('NEO4J_MCP_SERVER_HOST')}")
     logger.info(f"  NEO4J_MCP_SERVER_PORT: {env.get('NEO4J_MCP_SERVER_PORT')}")
-    logger.info(f"  NEO4J_MCP_SERVER_PATH: {env.get('NEO4J_MCP_SERVER_PATH', 'not set')}")
     logger.info(f"  NEO4J_MCP_SERVER_ALLOWED_HOSTS: {env.get('NEO4J_MCP_SERVER_ALLOWED_HOSTS')}")
     logger.info(f"  NEO4J_URI: {env.get('NEO4J_URI', 'not set')}")
     logger.info("=" * 60)
@@ -152,7 +162,8 @@ if __name__ == '__main__':
     
     logger.info("Wrapper started successfully")
     logger.info(f"Health checks available at: http://localhost:{PROXY_PORT}/health")
-    logger.info(f"MCP endpoint: http://localhost:{PROXY_PORT}/api/mcp/")
+    logger.info(f"MCP endpoint (external): http://localhost:{PROXY_PORT}/api/mcp/")
+    logger.info(f"MCP endpoint (internal): http://localhost:{MCP_PORT}/")
     
     # Run MCP server in main thread (blocking)
     run_mcp_server()
