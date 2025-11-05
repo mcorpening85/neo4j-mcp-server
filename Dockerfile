@@ -17,9 +17,9 @@ RUN chmod +x /app/start.py
 # Expose port
 EXPOSE 8080
 
-# Health check - now that we have a proper endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+# Longer start period for slower connections, more lenient health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the wrapper script which handles both health checks and MCP server
-CMD ["python3", "/app/start.py"]
+CMD ["python3", "-u", "/app/start.py"]
