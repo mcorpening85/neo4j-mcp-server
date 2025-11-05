@@ -46,7 +46,7 @@ curl https://YOUR-APP-NAME.onrender.com/health
 
 # Root endpoint (also returns health status)
 curl https://YOUR-APP-NAME.onrender.com/
-# Should return: MCP Server Running
+# Should return: OK
 ```
 
 ### 3. Connect to Claude Desktop
@@ -74,6 +74,11 @@ Add this to your Claude Desktop config:
 }
 ```
 
+> ⚠️ **CRITICAL:** The URL **MUST** end with `/api/mcp/` - don't forget the trailing slash!
+> 
+> ✅ Correct: `https://YOUR-APP-NAME.onrender.com/api/mcp/`  
+> ❌ Wrong: `https://YOUR-APP-NAME.onrender.com`
+
 Restart Claude Desktop (Cmd/Ctrl + R).
 
 ## Configuration
@@ -97,13 +102,17 @@ Restart Claude Desktop (Cmd/Ctrl + R).
 
 ## How It Works
 
-This deployment uses a Python wrapper script (`start.py`) that:
-1. Runs a lightweight HTTP server for Render health checks on port 8080
-2. Launches the MCP server alongside it
-3. Responds to health checks at `/health` and `/` endpoints
+This deployment uses a Python reverse proxy wrapper (`start.py`) that:
+1. Runs on port 8080 (external, facing Render)
+2. Handles health checks at `/health` and `/` endpoints for Render
+3. Forwards all MCP requests to the internal MCP server (port 8081)
 4. Provides detailed logging for troubleshooting
 
-This architecture ensures Render detects the service as "healthy" while the MCP server runs normally.
+This architecture ensures:
+- ✅ Render's health checks succeed (no "501 Unsupported method" errors)
+- ✅ MCP server operates normally on internal port
+- ✅ All POST/GET requests properly forwarded
+- ✅ Service stays healthy and running
 
 ## Local Development
 
@@ -126,6 +135,11 @@ Test locally:
 # Health check
 curl http://localhost:8080/health
 
+# Test MCP endpoint
+curl -X POST http://localhost:8080/api/mcp/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}'
+
 # View logs
 docker logs <container-id>
 ```
@@ -134,7 +148,7 @@ docker logs <container-id>
 
 ```bash
 # Install the package
-pip install mcp-neo4j-cypher
+pip install mcp-neo4j-cypher requests
 
 # Run the wrapper script
 export NEO4J_URI=bolt://localhost:7687
@@ -182,13 +196,40 @@ Once connected, try these prompts in Claude:
 
 ## Troubleshooting
 
+### "Error 501: Unsupported method ('POST')"
+
+**Cause:** Your Claude Desktop config is missing `/api/mcp/` at the end of the URL.
+
+**Solution:** Update your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "neo4j-render": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://YOUR-APP-NAME.onrender.com/api/mcp/"
+      ]
+    }
+  }
+}
+```
+
+**Key points:**
+- ✅ URL must end with `/api/mcp/`
+- ✅ Don't forget the trailing slash
+- ⚠️ Replace `YOUR-APP-NAME` with your actual Render app name
+
 ### "No open ports detected" Error
 
-**Fixed!** This repository now includes a health check wrapper that properly responds to Render's health checks. If you still see this error:
+**Fixed!** This repository now includes a reverse proxy wrapper that properly handles Render's health checks. If you still see this error:
 
-1. Ensure you've pulled the latest code with `start.py` and updated `Dockerfile`
+1. Ensure you've pulled the latest code with updated `start.py` and `Dockerfile`
 2. Check that the container is building successfully in Render logs
 3. Verify the `healthCheckPath: /health` is in your `render.yaml`
+4. Make sure `requests` library is installed (should be in Dockerfile)
 
 ### Service won't start
 
@@ -216,8 +257,10 @@ print('✓ Connection successful')
 ### Claude can't connect
 
 ```bash
-# Test the MCP endpoint
-curl https://YOUR-APP-NAME.onrender.com/api/mcp/
+# Test the MCP endpoint (should get a response, even if error)
+curl -X POST https://YOUR-APP-NAME.onrender.com/api/mcp/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}'
 
 # Check service status
 curl https://YOUR-APP-NAME.onrender.com/health
@@ -249,17 +292,21 @@ If logs show "Failed to establish connection":
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│   Render (Docker Container)         │
-│  ┌──────────────────────────────┐   │
-│  │  start.py wrapper            │   │
-│  │  ├─ Health Server (port 8080)│   │
-│  │  │  └─ /health endpoint      │   │
-│  │  │  └─ / endpoint            │   │
-│  │  └─ MCP Server               │   │
-│  │     └─ /api/mcp/ endpoint    │   │
-│  └──────────────────────────────┘   │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│   Render (Docker Container)              │
+│  ┌────────────────────────────────────┐  │
+│  │  start.py (Reverse Proxy)          │  │
+│  │  Port 8080 (External)              │  │
+│  │  ├─ /health → 200 OK               │  │
+│  │  ├─ / → 200 OK                     │  │
+│  │  └─ /api/mcp/* → Forward to 8081  │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  mcp-neo4j-cypher                  │  │
+│  │  Port 8081 (Internal)              │  │
+│  │  └─ /api/mcp/ → MCP Protocol      │  │
+│  └────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
            │
            ↓
     ┌──────────────┐
