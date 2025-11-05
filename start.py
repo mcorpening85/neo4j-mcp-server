@@ -40,12 +40,22 @@ class ProxyHandler(BaseHTTPRequestHandler):
             # Build target URL
             target_url = f"{MCP_BASE_URL}{self.path}"
             
-            # Get request headers
-            headers = {key: val for key, val in self.headers.items()}
+            # Get request headers and fix the Host header for internal routing
+            headers = {}
+            for key, val in self.headers.items():
+                # Don't forward hop-by-hop headers
+                if key.lower() not in ['host', 'connection', 'keep-alive', 'proxy-authenticate', 
+                                       'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']:
+                    headers[key] = val
+            
+            # Set the Host header to localhost for internal MCP server
+            headers['Host'] = f'127.0.0.1:{MCP_PORT}'
             
             # Read request body
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length) if content_length > 0 else None
+            
+            logger.info(f"Proxying {self.command} {self.path} to MCP server")
             
             # Forward the request
             if self.command == 'GET':
@@ -65,6 +75,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     self.send_header(key, val)
             self.end_headers()
             self.wfile.write(response.content)
+            
+            logger.info(f"Response: {response.status_code}")
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Proxy error: {e}")
@@ -111,14 +123,19 @@ def run_mcp_server():
     env = os.environ.copy()
     env['NEO4J_MCP_SERVER_PORT'] = str(MCP_PORT)
     env['NEO4J_MCP_SERVER_HOST'] = '127.0.0.1'  # Only bind to localhost
+    # Override ALLOWED_HOSTS to accept localhost
+    env['NEO4J_MCP_SERVER_ALLOWED_HOSTS'] = '127.0.0.1,localhost,*'
     
     # Log configuration
+    logger.info("=" * 60)
     logger.info("Starting MCP server with configuration:")
     logger.info(f"  NEO4J_TRANSPORT: {env.get('NEO4J_TRANSPORT', 'not set')}")
     logger.info(f"  NEO4J_MCP_SERVER_HOST: {env.get('NEO4J_MCP_SERVER_HOST')}")
     logger.info(f"  NEO4J_MCP_SERVER_PORT: {env.get('NEO4J_MCP_SERVER_PORT')}")
     logger.info(f"  NEO4J_MCP_SERVER_PATH: {env.get('NEO4J_MCP_SERVER_PATH', 'not set')}")
+    logger.info(f"  NEO4J_MCP_SERVER_ALLOWED_HOSTS: {env.get('NEO4J_MCP_SERVER_ALLOWED_HOSTS')}")
     logger.info(f"  NEO4J_URI: {env.get('NEO4J_URI', 'not set')}")
+    logger.info("=" * 60)
     
     # Run the MCP server
     subprocess.run(['mcp-neo4j-cypher'], env=env)
